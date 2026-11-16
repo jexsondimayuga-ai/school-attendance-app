@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EduTrack GeoFence | School Employee Proximity Attendance</title>
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        navy: {
+                            800: '#1e293b',
+                            900: '#0f172a',
+                            950: '#090d16',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom subtle radar pulse animation */
+        @keyframes radarPulse {
+            0% {
+                transform: scale(0.85);
+                opacity: 0.75;
+            }
+            100% {
+                transform: scale(1.35);
+                opacity: 0;
+            }
+        }
+        .radar-ping {
+            animation: radarPulse 2.4s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+        }
+        /* Custom range slider styling */
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #2563eb;
+            cursor: pointer;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.2);
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans antialiased min-h-screen flex flex-col">
+
+    <!-- Top Navigation Bar -->
+    <header class="bg-navy-900 text-white shadow-lg sticky top-0 z-30 border-b border-slate-800">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="bg-blue-600 p-2 rounded-xl shadow-inner flex items-center justify-center">
+                    <i data-lucide="map-pin-check" class="w-6 h-6 text-white"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-base sm:text-lg tracking-tight leading-tight">EduTrack <span class="text-blue-400">GeoFence</span></h1>
+                    <p class="text-[11px] text-slate-400 hidden sm:block">Teaching & Non-Teaching Proximity Attendance Portal</p>
+                </div>
+            </div>
+
+            <!-- Live Clock & Simulator Toggle -->
+            <div class="flex items-center space-x-3 sm:space-x-5">
+                <div class="text-right">
+                    <div id="live-clock" class="font-mono font-bold text-sm sm:text-base text-emerald-400 tracking-wider">08:00:00 AM</div>
+                    <div id="live-date" class="text-[11px] text-slate-400">Loading date...</div>
+                </div>
+                <button onclick="toggleSimulatorPanel()" id="sim-toggle-btn" class="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 px-3 py-2 rounded-xl text-xs font-semibold transition shadow-sm">
+                    <i data-lucide="sliders" class="w-4 h-4"></i>
+                    <span class="hidden md:inline">GPS Simulator</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Toast Notification Banner (Replaces alert()) -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+    <!-- Collapsible GPS & Geofence Simulator Panel (For Testing & Demo) -->
+    <section id="simulator-panel" class="bg-slate-900 text-slate-200 border-b border-slate-700 shadow-inner transition-all duration-300">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-3 border-b border-slate-800">
+                <div class="flex items-start sm:items-center space-x-2.5">
+                    <span class="bg-amber-500/20 text-amber-400 p-1.5 rounded-lg mt-0.5 sm:mt-0">
+                        <i data-lucide="satellite" class="w-5 h-5"></i>
+                    </span>
+                    <div>
+                        <h2 class="text-sm font-bold text-white flex items-center gap-2">
+                            Geofence & GPS Testing Console
+                            <span id="gps-mode-badge" class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">Simulator Mode</span>
+                        </h2>
+                        <p class="text-xs text-slate-400">Test the 100m school gate lock from your desk or switch to real device GPS.</p>
+                    </div>
+                </div>
+
+                <!-- Mode Switcher: Simulator vs Real Device GPS -->
+                <div class="flex flex-wrap items-center gap-2">
+                    <button onclick="setGpsMode('simulator')" id="btn-mode-sim" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white shadow transition">
+                        Virtual Distance Slider
+                    </button>
+                    <button onclick="setGpsMode('live')" id="btn-mode-live" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700 transition flex items-center gap-1.5">
+                        <i data-lucide="navigation" class="w-3.5 h-3.5"></i> Use Live Device GPS
+                    </button>
+                    <button onclick="setCurrentLocationAsGate()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/30 border border-emerald-500/30 transition flex items-center gap-1.5" title="Calibrate School Gate to your actual current GPS">
+                        <i data-lucide="crosshair" class="w-3.5 h-3.5"></i> Set My GPS as School Gate
+                    </button>
+                </div>
+            </div>
+
+            <!-- Simulator Controls Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 pt-3 items-center">
+                <!-- Distance Slider -->
+                <div id="sim-slider-box" class="lg:col-span-7 bg-slate-800/80 p-3.5 rounded-xl border border-slate-700/80">
+                    <div class="flex justify-between items-center mb-2">
+                        <label for="distance-slider" class="text-xs font-semibold text-slate-300">Simulated Distance from School Gate:</label>
+                        <span id="sim-distance-label" class="font-mono text-sm font-bold text-emerald-400">35 meters</span>
+                    </div>
+                    <input type="range" id="distance-slider" min="0" max="500" value="35" oninput="handleSliderChange(this.value)" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                    <div class="flex flex-wrap gap-1.5 mt-3">
+                        <button onclick="setSimulatedDistance(15)" class="text-[11px] px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30 transition">At Gate (15m)</button>
+                        <button onclick="setSimulatedDistance(85)" class="text-[11px] px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30 transition">Faculty Room (85m)</button>
+                        <button onclick="setSimulatedDistance(100)" class="text-[11px] px-2.5 py-1 rounded-md bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 border border-blue-500/30 transition">Boundary Edge (100m)</button>
+                        <button onclick="setSimulatedDistance(135)" class="text-[11px] px-2.5 py-1 rounded-md bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 border border-rose-500/30 transition">Outside Street (135m)</button>
+                        <button onclick="setSimulatedDistance(420)" class="text-[11px] px-2.5 py-1 rounded-md bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 border border-rose-500/30 transition">At Home (420m)</button>
+                    </div>
+                </div>
+
+                <!-- School Gate Coordinates Config -->
+                <div class="lg:col-span-5 bg-slate-800/80 p-3.5 rounded-xl border border-slate-700/80 text-xs">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="font-semibold text-slate-300 flex items-center gap-1.5">
+                            <i data-lucide="school" class="w-3.5 h-3.5 text-blue-400"></i> School Main Gate Anchor
+                        </span>
+                        <span class="text-[11px] text-slate-400 font-mono">Radius: 100m</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="text-[10px] text-slate-400 block">Gate Latitude</label>
+                            <input type="number" step="0.000001" id="gate-lat-input" onchange="updateGateCoordsFromInputs()" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 font-mono text-xs focus:outline-none focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-slate-400 block">Gate Longitude</label>
+                            <input type="number" step="0.000001" id="gate-lng-input" onchange="updateGateCoordsFromInputs()" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 font-mono text-xs focus:outline-none focus:border-blue-500">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Main Dashboard Container -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Left Column: Employee Identity & Role Selection (5 cols on lg) -->
+            <div class="lg:col-span-5 space-y-6">
+                
+                <!-- Employee Profile Card -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+                    <div class="bg-gradient-to-r from-navy-900 to-slate-800 px-5 py-4 text-white flex items-center justify-between">
+                        <div class="flex items-center space-x-2.5">
+                            <i data-lucide="id-card" class="w-5 h-5 text-blue-400"></i>
+                            <h2 class="font-bold text-sm sm:text-base">Employee Identification</h2>
+                        </div>
+                        <span id="role-badge-header" class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                            Teaching Personnel
+                        </span>
+                    </div>
+
+                    <div class="p-5 space-y-4">
+                        <!-- Personnel Category Tabs -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Select Personnel Classification</label>
+                            <div class="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl border border-slate-200">
+                                <button type="button" onclick="selectCategory('Teaching')" id="tab-teaching" class="flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs sm:text-sm font-bold bg-white text-blue-700 shadow-sm transition">
+                                    <i data-lucide="graduation-cap" class="w-4 h-4"></i>
+                                    <span>Teaching</span>
+                                </button>
+                                <button type="button" onclick="selectCategory('Non-Teaching')" id="tab-nonteaching" class="flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs sm:text-sm font-semibold text-slate-600 hover:text-slate-900 transition">
+                                    <i data-lucide="briefcase" class="w-4 h-4"></i>
+                                    <span>Non-Teaching</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Quick Sample Employee Presets -->
+                        <div>
+                            <label for="preset-select" class="block text-xs font-semibold text-slate-500 mb-1">Quick Select Sample Profile</label>
+                            <select id="preset-select" onchange="applyPresetProfile()" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+                                <!-- Populated dynamically by JS -->
+                            </select>
+                        </div>
+
+                        <!-- Editable Employee Fields -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                            <div>
+                                <label for="emp-id" class="block text-xs font-semibold text-slate-600 mb-1">Employee ID No.</label>
+                                <input type="text" id="emp-id" value="TCH-2026-014" oninput="syncProfileDisplay()" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-mono text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none">
+                            </div>
+                            <div>
+                                <label for="emp-position" class="block text-xs font-semibold text-slate-600 mb-1">Position / Designation</label>
+                                <input type="text" id="emp-position" value="Teacher III - Mathematics" oninput="syncProfileDisplay()" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label for="emp-name" class="block text-xs font-semibold text-slate-600 mb-1">Full Name</label>
+                            <input type="text" id="emp-name" value="Maria Clara Santos, LPT" oninput="syncProfileDisplay()" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+
+                        <!-- Optional Remarks / Schedule Note -->
+                        <div>
+                            <label for="emp-remarks" class="block text-xs font-semibold text-slate-600 mb-1">Attendance Note / Shift (Optional)</label>
+                            <input type="text" id="emp-remarks" placeholder="e.g., Morning Shift / Gate 1 Entry" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Summary Stats Card -->
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm text-center">
+                        <p class="text-[11px] font-semibold text-slate-400 uppercase">Total Logs</p>
+                        <p id="stat-total" class="text-xl sm:text-2xl font-extrabold text-slate-800 mt-0.5">0</p>
+                    </div>
+                    <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm text-center">
+                        <p class="text-[11px] font-semibold text-blue-500 uppercase">Teaching</p>
+                        <p id="stat-teaching" class="text-xl sm:text-2xl font-extrabold text-blue-700 mt-0.5">0</p>
+                    </div>
+                    <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm text-center">
+                        <p class="text-[11px] font-semibold text-indigo-500 uppercase">Non-Teaching</p>
+                        <p id="stat-nonteaching" class="text-xl sm:text-2xl font-extrabold text-indigo-700 mt-0.5">0</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Proximity Radar & Attendance Activation Terminal (7 cols on lg) -->
+            <div class="lg:col-span-7 space-y-6">
+                
+                <!-- Proximity Geofence Terminal Card -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+                    <!-- Dynamic Status Header Banner -->
+                    <div id="geofence-banner" class="bg-emerald-600 text-white px-5 py-3.5 flex flex-wrap items-center justify-between gap-2 transition-colors duration-300">
+                        <div class="flex items-center space-x-2">
+                            <span id="banner-icon-wrap" class="bg-white/20 p-1.5 rounded-lg">
+                                <i data-lucide="shield-check" class="w-5 h-5"></i>
+                            </span>
+                            <div>
+                                <p id="banner-title" class="font-bold text-sm sm:text-base leading-tight">WITHIN SCHOOL GEOFENCE (≤ 100m)</p>
+                                <p id="banner-subtitle" class="text-xs text-white/90">Attendance activation is unlocked and ready.</p>
+                            </div>
+                        </div>
+                        <span id="distance-pill" class="font-mono font-bold text-sm bg-black/25 px-3 py-1 rounded-full">
+                            35m / 100m
+                        </span>
+                    </div>
+
+                    <div class="p-5 sm:p-6">
+                        <!-- Visual Radar & Telemetry Grid -->
+                        <div class="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+                            
+                            <!-- Interactive Proximity Radar Visualization -->
+                            <div class="md:col-span-5 flex flex-col items-center justify-center">
+                                <div class="relative w-48 h-48 sm:w-52 sm:h-52 rounded-full bg-slate-900 border-4 border-slate-800 shadow-inner flex items-center justify-center overflow-hidden">
+                                    <!-- Radar Grid Rings -->
+                                    <div class="absolute inset-3 rounded-full border border-dashed border-emerald-500/40"></div>
+                                    <div class="absolute inset-10 rounded-full border border-slate-700/80"></div>
+                                    <div class="absolute w-full h-[1px] bg-slate-800"></div>
+                                    <div class="absolute h-full w-[1px] bg-slate-800"></div>
+
+                                    <!-- 100m Boundary Label -->
+                                    <span class="absolute top-2 text-[9px] font-mono text-emerald-400/80 bg-slate-900/80 px-1.5 rounded">100m ZONE</span>
+
+                                    <!-- School Gate Center Pin -->
+                                    <div class="relative z-10 flex flex-col items-center">
+                                        <div id="radar-pulse-ring" class="absolute -inset-3 rounded-full bg-emerald-500/30 radar-ping"></div>
+                                        <div class="w-8 h-8 rounded-full bg-blue-600 border-2 border-white shadow-lg flex items-center justify-center text-white" title="School Main Gate">
+                                            <i data-lucide="school" class="w-4 h-4"></i>
+                                        </div>
+                                        <span class="text-[9px] font-bold text-white mt-1 bg-slate-800/90 px-1.5 rounded">GATE</span>
+                                    </div>
+
+                                    <!-- Employee Moving Dot Indicator -->
+                                    <div id="employee-radar-dot" class="absolute z-20 transition-all duration-300 flex flex-col items-center" style="transform: translate(22px, -18px);">
+                                        <span id="employee-dot-circle" class="w-4 h-4 rounded-full bg-emerald-400 border-2 border-white shadow-md"></span>
+                                        <span class="text-[9px] font-mono font-bold text-white bg-black/75 px-1 rounded mt-0.5">YOU</span>
+                                    </div>
+                                </div>
+                                <p class="text-[11px] text-slate-500 mt-2.5 text-center">Live 100m School Gate Proximity Radar</p>
+                            </div>
+
+                            <!-- Live Telemetry & Coordinates Details -->
+                            <div class="md:col-span-7 space-y-3.5">
+                                <div class="bg-slate-50 rounded-xl p-4 border border-slate-200/80 space-y-2.5">
+                                    <div class="flex justify-between items-center border-b border-slate-200 pb-2">
+                                        <span class="text-xs font-medium text-slate-500">Current Distance to Gate</span>
+                                        <span id="telemetry-distance" class="font-mono text-lg font-extrabold text-emerald-600">35.0 meters</span>
+                                    </div>
+                                    <div class="flex justify-between items-center border-b border-slate-200 pb-2">
+                                        <span class="text-xs font-medium text-slate-500">Permitted Threshold</span>
+                                        <span class="font-mono text-xs font-bold text-slate-700">≤ 100.0 meters</span>
+                                    </div>
+                                    <div class="flex justify-between items-center border-b border-slate-200 pb-2">
+                                        <span class="text-xs font-medium text-slate-500">Employee GPS Coordinates</span>
+                                        <span id="telemetry-coords" class="font-mono text-xs text-slate-700">13.756814, 120.941280</span>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-xs font-medium text-slate-500">Active Profile</span>
+                                        <span id="telemetry-profile" class="text-xs font-bold text-slate-800 truncate max-w-[190px]">Maria Clara Santos (Teaching)</span>
+                                    </div>
+                                </div>
+
+                                <!-- Out-of-Range Warning Box (Shown only when > 100m) -->
+                                <div id="out-of-range-alert" class="hidden bg-rose-50 border border-rose-200 rounded-xl p-3.5 flex items-start space-x-3">
+                                    <i data-lucide="lock" class="w-5 h-5 text-rose-600 shrink-0 mt-0.5"></i>
+                                    <div class="text-xs text-rose-800">
+                                        <p class="font-bold">Attendance Buttons Locked</p>
+                                        <p class="mt-0.5">You are currently <span id="excess-distance" class="font-mono font-bold">35m</span> outside the allowed 100-meter campus perimeter. Please move closer to the School Main Gate to activate Time In or Time Out.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons: TIME IN & TIME OUT -->
+                        <div class="mt-6 pt-5 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                            <button id="btn-time-in" onclick="recordAttendance('TIME IN')" class="w-full py-4 px-5 rounded-xl font-bold text-sm sm:text-base flex items-center justify-center space-x-2.5 shadow-md transition-all duration-200 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white cursor-pointer">
+                                <i data-lucide="log-in" class="w-5 h-5"></i>
+                                <span>ACTIVATE TIME IN</span>
+                            </button>
+
+                            <button id="btn-time-out" onclick="recordAttendance('TIME OUT')" class="w-full py-4 px-5 rounded-xl font-bold text-sm sm:text-base flex items-center justify-center space-x-2.5 shadow-md transition-all duration-200 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white cursor-pointer">
+                                <i data-lucide="log-out" class="w-5 h-5"></i>
+                                <span>ACTIVATE TIME OUT</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Attendance Logs History Section -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+                    <div class="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                        <div class="flex items-center space-x-2">
+                            <i data-lucide="clipboard-list" class="w-5 h-5 text-slate-700"></i>
+                            <h3 class="font-bold text-slate-800 text-sm sm:text-base">Verified Proximity Attendance Logs</h3>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button onclick="exportLogsCSV()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center gap-1.5 transition">
+                                <i data-lucide="download" class="w-3.5 h-3.5"></i> Export CSV
+                            </button>
+                            <button onclick="clearLogs()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center gap-1.5 transition">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Clear
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Filter Tabs -->
+                    <div class="px-5 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center gap-2 overflow-x-auto">
+                        <span class="text-xs font-semibold text-slate-400 mr-1">Filter:</span>
+                        <button onclick="setLogFilter('ALL')" id="filter-all" class="px-3 py-1 rounded-full text-xs font-bold bg-navy-900 text-white transition">All Logs</button>
+                        <button onclick="setLogFilter('Teaching')" id="filter-teaching" class="px-3 py-1 rounded-full text-xs font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-100 transition">Teaching</button>
+                        <button onclick="setLogFilter('Non-Teaching')" id="filter-nonteaching" class="px-3 py-1 rounded-full text-xs font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-100 transition">Non-Teaching</button>
+                    </div>
+
+                    <!-- Responsive Table / Card List -->
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50/80 text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                                    <th class="py-3 px-4 font-bold">Employee</th>
+                                    <th class="py-3 px-4 font-bold">Classification</th>
+                                    <th class="py-3 px-4 font-bold">Action</th>
+                                    <th class="py-3 px-4 font-bold">Date & Time</th>
+                                    <th class="py-3 px-4 font-bold">Gate Distance</th>
+                                </tr>
+                            </thead>
+                            <tbody id="attendance-table-body" class="divide-y divide-slate-100 text-sm">
+                                <!-- Rows injected by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Empty State -->
+                    <div id="empty-logs-state" class="hidden py-10 px-4 text-center">
+                        <div class="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                            <i data-lucide="calendar-check" class="w-6 h-6"></i>
+                        </div>
+                        <p class="text-sm font-semibold text-slate-700">No attendance records yet</p>
+                        <p class="text-xs text-slate-500 mt-1">Ensure you are within 100 meters of the School Gate and click Time In.</p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-4 mt-8">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
+            <p>© 2026 EduTrack GeoFence Attendance System • 100-Meter Campus Gate Verification</p>
+            <p class="font-mono text-[11px]">Haversine GPS Geofence Engine v2.4</p>
+        </div>
+    </footer>
+
+    <!-- Application Logic (JavaScript) -->
+    <script>
+        // =========================================================================
+        // 1. STATE & SAMPLE DATA CONFIGURATION
+        // =========================================================================
+        const MAX_ALLOWED_DISTANCE_METERS = 100;
+
+        // Default School Main Gate Coordinates (Mabini, Batangas, Philippines area)
+        let schoolGateCoords = {
+            lat: 13.756500,
+            lng: 120.941280
+        };
+
+        // Current Employee GPS State
+        let appState = {
+            mode: 'simulator', // 'simulator' or 'live'
+            simulatedDistance: 35, // meters
+            currentCoords: { lat: 13.756814, lng: 120.941280 },
+            calculatedDistance: 35,
+            selectedCategory: 'Teaching',
+            logFilter: 'ALL',
+            watchId: null
+        };
+
+        // Sample Employee Profiles for Teaching & Non-Teaching
+        const sampleProfiles = {
+            'Teaching': [
+                { id: 'TCH-2026-014', name: 'Maria Clara Santos, LPT', position: 'Teacher III - Mathematics' },
+                { id: 'TCH-2026-029', name: 'Jose Protacio Reyes, MAEd', position: 'Master Teacher I - Science' },
+                { id: 'TCH-2026-042', name: 'Elena Rostova Cruz, LPT', position: 'Teacher I - English Dept.' }
+            ],
+            'Non-Teaching': [
+                { id: 'NTCH-2026-005', name: 'Roberto M. Mendoza', position: 'Administrative Officer II' },
+                { id: 'NTCH-2026-011', name: 'Carmela D. Bautista', position: 'School Registrar / Records' },
+                { id: 'NTCH-2026-019', name: 'Danilo S. Villanueva', position: 'Chief Security & Gate Officer' }
+            ]
+        };
+
+        // Attendance Logs Array (Persisted in localStorage)
+        let attendanceLogs = [];
+
+        // =========================================================================
+        // 2. INITIALIZATION
+        // =========================================================================
+        window.addEventListener('DOMContentLoaded', () => {
+            // Initialize Lucide icons
+            lucide.createIcons();
+
+            // Load saved gate coords or logs from localStorage
+            loadFromLocalStorage();
+
+            // Populate gate inputs
+            document.getElementById('gate-lat-input').value = schoolGateCoords.lat.toFixed(6);
+            document.getElementById('gate-lng-input').value = schoolGateCoords.lng.toFixed(6);
+
+            // Initialize Employee Category & Presets
+            selectCategory('Teaching');
+
+            // Start Live Digital Clock
+            updateClock();
+            setInterval(updateClock, 1000);
+
+            // Compute initial simulated coordinates & UI state
+            updateSimulatedCoordsFromDistance(appState.simulatedDistance);
+            renderAttendanceLogs();
+        });
+
+        function loadFromLocalStorage() {
+            try {
+                const savedLogs = localStorage.getItem('edutrack_geofence_logs');
+                if (savedLogs) {
+                    attendanceLogs = JSON.parse(savedLogs);
+                } else {
+                    // Seed with 2 realistic sample entries so the table looks populated initially
+                    const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                    attendanceLogs = [
+                        {
+                            id: Date.now() - 3600000,
+                            empId: 'TCH-2026-029',
+                            name: 'Jose Protacio Reyes, MAEd',
+                            category: 'Teaching',
+                            position: 'Master Teacher I - Science',
+                            action: 'TIME IN',
+                            timestamp: `${today} • 07:18:42 AM`,
+                            distance: 24,
+                            coords: '13.756715, 120.941280',
+                            remarks: 'Morning Flag Ceremony'
+                        },
+                        {
+                            id: Date.now() - 1800000,
+                            empId: 'NTCH-2026-005',
+                            name: 'Roberto M. Mendoza',
+                            category: 'Non-Teaching',
+                            position: 'Administrative Officer II',
+                            action: 'TIME IN',
+                            timestamp: `${today} • 07:45:10 AM`,
+                            distance: 48,
+                            coords: '13.756931, 120.941280',
+                            remarks: 'Admin Office Duty'
+                        }
+                    ];
+                    saveLogsToLocalStorage();
+                }
+
+                const savedGate = localStorage.getItem('edutrack_gate_coords');
+                if (savedGate) {
+                    schoolGateCoords = JSON.parse(savedGate);
+                }
+            } catch (e) {
+                console.error('Storage load error:', e);
+            }
+        }
+
+        function saveLogsToLocalStorage() {
+            try {
+                localStorage.setItem('edutrack_geofence_logs', JSON.stringify(attendanceLogs));
+            } catch (e) {
+                console.error('Storage save error:', e);
+            }
+        }
+
+        // =========================================================================
+        // 3. HAVERSINE FORMULA & GPS PROXIMITY ENGINE
+        // =========================================================================
+        /**
+         * Calculates exact distance in meters between two GPS coordinates
+         * using the Haversine formula.
+         */
+        function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371e3; // Earth's radius in meters
+            const phi1 = lat1 * Math.PI / 180;
+            const phi2 = lat2 * Math.PI / 180;
+            const deltaPhi = (lat2 - lat1) * Math.PI / 180;
+            const deltaLambda = (lon2 - lon1) * Math.PI / 180;
+
+            const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+                      Math.cos(phi1) * Math.cos(phi2) *
+                      Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+            return R * c; // Distance in meters
+        }
+
+        /**
+         * Generates realistic offset latitude/longitude at a specified distance (in meters)
+         * from the School Main Gate for the simulator.
+         */
+        function updateSimulatedCoordsFromDistance(meters) {
+            appState.simulatedDistance = Number(meters);
+            // 1 degree of latitude is approx 111,320 meters
+            const latOffset = (meters / 111320);
+            appState.currentCoords = {
+                lat: schoolGateCoords.lat + latOffset,
+                lng: schoolGateCoords.lng
+            };
+
+            const exactDist = calculateHaversineDistance(
+                schoolGateCoords.lat,
+                schoolGateCoords.lng,
+                appState.currentCoords.lat,
+                appState.currentCoords.lng
+            );
+
+            appState.calculatedDistance = Math.round(exactDist * 10) / 10;
+            updateProximityUI();
+        }
+
+        // =========================================================================
+        // 4. UI UPDATES FOR PROXIMITY LOCK & RADAR
+        // =========================================================================
+        function updateProximityUI() {
+            const dist = appState.calculatedDistance;
+            const isWithinRange = dist <= MAX_ALLOWED_DISTANCE_METERS;
+
+            // Update Telemetry Text
+            const distFormatted = dist < 1000 ? `${dist.toFixed(1)} meters` : `${(dist / 1000).toFixed(2)} km`;
+            document.getElementById('telemetry-distance').textContent = distFormatted;
+            document.getElementById('telemetry-coords').textContent = `${appState.currentCoords.lat.toFixed(6)}, ${appState.currentCoords.lng.toFixed(6)}`;
+            document.getElementById('distance-pill').textContent = `${Math.round(dist)}m / 100m`;
+            document.getElementById('sim-distance-label').textContent = `${Math.round(dist)} meters`;
+
+            // Update Radar Dot Position (Scale 0m-100m inside the inner ring, >100m outside)
+            const radarDot = document.getElementById('employee-radar-dot');
+            const dotCircle = document.getElementById('employee-dot-circle');
+            const pulseRing = document.getElementById('radar-pulse-ring');
+
+            // Max visual radius in px is ~88px; 100m corresponds to ~68px (the dashed boundary)
+            const clampedDist = Math.min(dist, 145);
+            const pixelRadius = (clampedDist / 100) * 68;
+            const angleRad = -Math.PI / 4; // 45 degrees top-right
+            const offsetX = Math.cos(angleRad) * pixelRadius;
+            const offsetY = Math.sin(angleRad) * pixelRadius;
+            radarDot.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
+
+            // Elements to toggle based on <= 100m lock
+            const banner = document.getElementById('geofence-banner');
+            const bannerTitle = document.getElementById('banner-title');
+            const bannerSubtitle = document.getElementById('banner-subtitle');
+            const telemetryDistEl = document.getElementById('telemetry-distance');
+            const outOfRangeAlert = document.getElementById('out-of-range-alert');
+            const btnTimeIn = document.getElementById('btn-time-in');
+            const btnTimeOut = document.getElementById('btn-time-out');
+
+            if (isWithinRange) {
+                // UNLOCKED STATE (<= 100m)
+                banner.className = 'bg-emerald-600 text-white px-5 py-3.5 flex flex-wrap items-center justify-between gap-2 transition-colors duration-300';
+                bannerTitle.textContent = 'WITHIN SCHOOL GEOFENCE (≤ 100m)';
+                bannerSubtitle.textContent = 'Proximity verified. Attendance activation is enabled.';
+                telemetryDistEl.className = 'font-mono text-lg font-extrabold text-emerald-600';
+                document.getElementById('sim-distance-label').className = 'font-mono text-sm font-bold text-emerald-400';
+
+                dotCircle.className = 'w-4 h-4 rounded-full bg-emerald-400 border-2 border-white shadow-md';
+                pulseRing.className = 'absolute -inset-3 rounded-full bg-emerald-500/30 radar-ping';
+                outOfRangeAlert.classList.add('hidden');
+
+                // Enable Buttons
+                btnTimeIn.disabled = false;
+                btnTimeIn.className = 'w-full py-4 px-5 rounded-xl font-bold text-sm sm:text-base flex items-center justify-center space-x-2.5 shadow-md transition-all duration-200 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white cursor-pointer';
+
+                btnTimeOut.disabled = false;
+                btnTimeOut.className = 'w-full py-4 px-5 rounded-xl font-bold text-sm sm:text-base flex items-center justify-center space-x-2.5 shadow-md transition-all duration-200 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white cursor-pointer';
+            } else {
+                // LOCKED STATE (> 100m)
+                const excess = Math.round(dist - MAX_ALLOWED_DISTANCE_METERS);
+                banner.className = 'bg-rose-600 text-white px-5 py-3.5 flex flex-wrap items-center justify-between gap-2 transition-colors duration-300';
+                bannerTitle.textContent = 'OUT OF SCHOOL RANGE (> 100m)';
+                bannerSubtitle.textContent = 'Attendance locked. Move closer to the School Gate.';
+                telemetryDistEl.className = 'font-mono text-lg font-extrabold text-rose-600';
+                document.getElementById('sim-distance-label').className = 'font-mono text-sm font-bold text-rose-400';
+
+                dotCircle.className = 'w-4 h-4 rounded-full bg-rose-500 border-2 border-white shadow-md';
+                pulseRing.className = 'absolute -inset-3 rounded-full bg-rose-500/20';
+                outOfRangeAlert.classList.remove('hidden');
+                document.getElementById('excess-distance').textContent = `${excess}m`;
+
+                // Disable Buttons Visually & Functionally
+                btnTimeIn.disabled = true;
+                btnTimeIn.className = 'w-full py-4 px-5 rounded-xl font-bold text-sm sm:text-base flex items-center justify-center space-x-2.5 bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed select-none';
+
+                btnTimeOut.disabled = true;
+                btnTimeOut.className = 'w-full py-4 px-5 rounded-xl font-bold text-sm sm:text-base flex items-center justify-center space-x-2.5 bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed select-none';
+            }
+        }
+
+        // =========================================================================
+        // 5. GPS MODE & SIMULATOR CONTROLS
+        // =========================================================================
+        function toggleSimulatorPanel() {
+            const panel = document.getElementById('simulator-panel');
+            panel.classList.toggle('hidden');
+        }
+
+        function handleSliderChange(val) {
+            if (appState.mode !== 'simulator') {
+                setGpsMode('simulator');
+            }
+            updateSimulatedCoordsFromDistance(val);
+        }
+
+        function setSimulatedDistance(meters) {
+            document.getElementById('distance-slider').value = meters;
+            if (appState.mode !== 'simulator') {
+                setGpsMode('simulator');
+            }
+            updateSimulatedCoordsFromDistance(meters);
+        }
+
+        function setGpsMode(newMode) {
+            appState.mode = newMode;
+            const btnSim = document.getElementById('btn-mode-sim');
+            const btnLive = document.getElementById('btn-mode-live');
+            const badge = document.getElementById('gps-mode-badge');
+            const sliderBox = document.getElementById('sim-slider-box');
+
+            if (newMode === 'simulator') {
+                if (appState.watchId !== null && navigator.geolocation) {
+                    navigator.geolocation.clearWatch(appState.watchId);
+                    appState.watchId = null;
+                }
+                btnSim.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white shadow transition';
+                btnLive.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700 transition flex items-center gap-1.5';
+                badge.textContent = 'Simulator Mode';
+                badge.className = 'text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30';
+                sliderBox.classList.remove('opacity-50', 'pointer-events-none');
+                updateSimulatedCoordsFromDistance(document.getElementById('distance-slider').value);
+                showToast('Switched to Virtual GPS Simulator Mode.', 'info');
+            } else {
+                // Live Device GPS Mode
+                if (!navigator.geolocation) {
+                    showToast('Geolocation is not supported by your browser.', 'error');
+                    setGpsMode('simulator');
+                    return;
+                }
+
+                btnLive.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white shadow transition flex items-center gap-1.5';
+                btnSim.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700 transition';
+                badge.textContent = 'Live Hardware GPS';
+                badge.className = 'text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+                sliderBox.classList.add('opacity-50', 'pointer-events-none');
+
+                showToast('Acquiring live GPS satellite fix...', 'info');
+
+                appState.watchId = navigator.geolocation.watchPosition(
+                    (position) => {
+                        appState.currentCoords = {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude
+                        };
+                        const dist = calculateHaversineDistance(
+                            schoolGateCoords.lat,
+                            schoolGateCoords.lng,
+                            appState.currentCoords.lat,
+                            appState.currentCoords.lng
+                        );
+                        appState.calculatedDistance = Math.round(dist * 10) / 10;
+                        updateProximityUI();
+                    },
+                    (error) => {
+                        showToast(`GPS Signal Error: ${error.message}. Reverting to Simulator.`, 'error');
+                        setGpsMode('simulator');
+                    },
+                    { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+                );
+            }
+        }
+
+        function setCurrentLocationAsGate() {
+            if (!navigator.geolocation) {
+                showToast('Geolocation not supported on this device.', 'error');
+                return;
+            }
+            showToast('Calibrating School Gate to your exact GPS...', 'info');
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    schoolGateCoords.lat = pos.coords.latitude;
+                    schoolGateCoords.lng = pos.coords.longitude;
+                    document.getElementById('gate-lat-input').value = schoolGateCoords.lat.toFixed(6);
+                    document.getElementById('gate-lng-input').value = schoolGateCoords.lng.toFixed(6);
+                    localStorage.setItem('edutrack_gate_coords', JSON.stringify(schoolGateCoords));
+
+                    if (appState.mode === 'simulator') {
+                        updateSimulatedCoordsFromDistance(appState.simulatedDistance);
+                    }
+                    showToast('School Main Gate coordinates updated to your location!', 'success');
+                },
+                (err) => {
+                    showToast(`Unable to get location: ${err.message}`, 'error');
+                },
+                { enableHighAccuracy: true }
+            );
+        }
+
+        function updateGateCoordsFromInputs() {
+            const lat = parseFloat(document.getElementById('gate-lat-input').value);
+            const lng = parseFloat(document.getElementById('gate-lng-input').value);
+            if (!isNaN(lat) && !isNaN(lng)) {
+                schoolGateCoords = { lat, lng };
+                localStorage.setItem('edutrack_gate_coords', JSON.stringify(schoolGateCoords));
+                if (appState.mode === 'simulator') {
+                    updateSimulatedCoordsFromDistance(appState.simulatedDistance);
+                }
+                showToast('School Gate coordinates updated.', 'info');
+            }
+        }
+
+        // =========================================================================
+        // 6. EMPLOYEE PROFILE & CATEGORY MANAGEMENT
+        // =========================================================================
+        function selectCategory(category) {
+            appState.selectedCategory = category;
+            const tabTeaching = document.getElementById('tab-teaching');
+            const tabNonTeaching = document.getElementById('tab-nonteaching');
+            const headerBadge = document.getElementById('role-badge-header');
+
+            if (category === 'Teaching') {
+                tabTeaching.className = 'flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs sm:text-sm font-bold bg-white text-blue-700 shadow-sm transition';
+                tabNonTeaching.className = 'flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs sm:text-sm font-semibold text-slate-600 hover:text-slate-900 transition';
+                headerBadge.textContent = 'Teaching Personnel';
+                headerBadge.className = 'text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30';
+            } else {
+                tabNonTeaching.className = 'flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs sm:text-sm font-bold bg-white text-indigo-700 shadow-sm transition';
+                tabTeaching.className = 'flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs sm:text-sm font-semibold text-slate-600 hover:text-slate-900 transition';
+                headerBadge.textContent = 'Non-Teaching Personnel';
+                headerBadge.className = 'text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-400/30';
+            }
+
+            // Populate Sample Dropdown
+            const select = document.getElementById('preset-select');
+            select.innerHTML = '';
+            sampleProfiles[category].forEach((emp, idx) => {
+                const option = document.createElement('option');
+                option.value = idx;
+                option.textContent = `${emp.name} — ${emp.position}`;
+                select.appendChild(option);
+            });
+
+            applyPresetProfile();
+        }
+
+        function applyPresetProfile() {
+            const idx = document.getElementById('preset-select').value;
+            const profile = sampleProfiles[appState.selectedCategory][idx];
+            if (profile) {
+                document.getElementById('emp-id').value = profile.id;
+                document.getElementById('emp-name').value = profile.name;
+                document.getElementById('emp-position').value = profile.position;
+                syncProfileDisplay();
+            }
+        }
+
+        function syncProfileDisplay() {
+            const name = document.getElementById('emp-name').value.trim() || 'Unnamed Employee';
+            document.getElementById('telemetry-profile').textContent = `${name} (${appState.selectedCategory})`;
+        }
+
+        // =========================================================================
+        // 7. ATTENDANCE RECORDING & LOG TABLE RENDERING
+        // =========================================================================
+        function recordAttendance(actionType) {
+            // Strict double-check of 100m geofence rule
+            if (appState.calculatedDistance > MAX_ALLOWED_DISTANCE_METERS) {
+                showToast(`Access Denied: You are ${Math.round(appState.calculatedDistance)}m away. Must be within 100m of the School Gate.`, 'error');
+                return;
+            }
+
+            const empId = document.getElementById('emp-id').value.trim();
+            const empName = document.getElementById('emp-name').value.trim();
+            const empPosition = document.getElementById('emp-position').value.trim();
+            const remarks = document.getElementById('emp-remarks').value.trim() || 'Verified Campus Gate Entry';
+
+            if (!empId || !empName) {
+                showToast('Please enter both Employee ID and Full Name before logging attendance.', 'error');
+                return;
+            }
+
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+            const newEntry = {
+                id: Date.now(),
+                empId: empId,
+                name: empName,
+                category: appState.selectedCategory,
+                position: empPosition || appState.selectedCategory,
+                action: actionType,
+                timestamp: `${dateStr} • ${timeStr}`,
+                distance: Math.round(appState.calculatedDistance),
+                coords: `${appState.currentCoords.lat.toFixed(6)}, ${appState.currentCoords.lng.toFixed(6)}`,
+                remarks: remarks
+            };
+
+            attendanceLogs.unshift(newEntry);
+            saveLogsToLocalStorage();
+            renderAttendanceLogs();
+
+            showToast(`${actionType} verified for ${empName} (${newEntry.distance}m from gate).`, 'success');
+        }
+
+        function setLogFilter(filter) {
+            appState.logFilter = filter;
+            const buttons = {
+                'ALL': document.getElementById('filter-all'),
+                'Teaching': document.getElementById('filter-teaching'),
+                'Non-Teaching': document.getElementById('filter-nonteaching')
+            };
+
+            Object.keys(buttons).forEach(key => {
+                if (key === filter) {
+                    buttons[key].className = 'px-3 py-1 rounded-full text-xs font-bold bg-navy-900 text-white transition';
+                } else {
+                    buttons[key].className = 'px-3 py-1 rounded-full text-xs font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-100 transition';
+                }
+            });
+
+            renderAttendanceLogs();
+        }
+
+        function renderAttendanceLogs() {
+            const tbody = document.getElementById('attendance-table-body');
+            const emptyState = document.getElementById('empty-logs-state');
+
+            // Update Summary Counters
+            document.getElementById('stat-total').textContent = attendanceLogs.length;
+            document.getElementById('stat-teaching').textContent = attendanceLogs.filter(l => l.category === 'Teaching').length;
+            document.getElementById('stat-nonteaching').textContent = attendanceLogs.filter(l => l.category === 'Non-Teaching').length;
+
+            // Filter Logs
+            const filtered = appState.logFilter === 'ALL'
+                ? attendanceLogs
+                : attendanceLogs.filter(l => l.category === appState.logFilter);
+
+            tbody.innerHTML = '';
+
+            if (filtered.length === 0) {
+                emptyState.classList.remove('hidden');
+                return;
+            } else {
+                emptyState.classList.add('hidden');
+            }
+
+            filtered.forEach(log => {
+                const isTeaching = log.category === 'Teaching';
+                const isTimeIn = log.action === 'TIME IN';
+
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-50/90 transition';
+                tr.innerHTML = `
+                    <td class="py-3.5 px-4">
+                        <div class="font-bold text-slate-800 text-xs sm:text-sm">${escapeHTML(log.name)}</div>
+                        <div class="text-[11px] font-mono text-slate-500">${escapeHTML(log.empId)} • ${escapeHTML(log.position)}</div>
+                    </td>
+                    <td class="py-3.5 px-4">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${isTeaching ? 'bg-blue-100 text-blue-800' : 'bg-indigo-100 text-indigo-800'}">
+                            ${escapeHTML(log.category)}
+                        </span>
+                    </td>
+                    <td class="py-3.5 px-4">
+                        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold ${isTimeIn ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">
+                            ${escapeHTML(log.action)}
+                        </span>
+                    </td>
+                    <td class="py-3.5 px-4">
+                        <div class="text-xs font-medium text-slate-700">${escapeHTML(log.timestamp)}</div>
+                        <div class="text-[11px] text-slate-400">${escapeHTML(log.remarks)}</div>
+                    </td>
+                    <td class="py-3.5 px-4">
+                        <span class="font-mono text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                            ${log.distance}m
+                        </span>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function exportLogsCSV() {
+            if (attendanceLogs.length === 0) {
+                showToast('No attendance logs available to export.', 'error');
+                return;
+            }
+            const headers = ['Employee ID', 'Full Name', 'Classification', 'Position', 'Action', 'Timestamp', 'Distance From Gate (m)', 'GPS Coordinates', 'Remarks'];
+            const rows = attendanceLogs.map(l => [
+                `"${l.empId}"`,
+                `"${l.name}"`,
+                `"${l.category}"`,
+                `"${l.position}"`,
+                `"${l.action}"`,
+                `"${l.timestamp}"`,
+                l.distance,
+                `"${l.coords}"`,
+                `"${l.remarks}"`
+            ]);
+
+            const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement('a');
+            link.setAttribute('href', encodedUri);
+            link.setAttribute('download', `School_Proximity_Attendance_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast('Attendance log exported as CSV file.', 'success');
+        }
+
+        function clearLogs() {
+            attendanceLogs = [];
+            saveLogsToLocalStorage();
+            renderAttendanceLogs();
+            showToast('Attendance logs cleared.', 'info');
+        }
+
+        // =========================================================================
+        // 8. UTILITIES (LIVE CLOCK, TOAST NOTIFICATIONS, SANITIZATION)
+        // =========================================================================
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('live-clock').textContent = now.toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            document.getElementById('live-date').textContent = now.toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric'
+            });
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+
+            const styles = {
+                success: 'bg-emerald-900 text-white border-emerald-700',
+                error: 'bg-rose-900 text-white border-rose-700',
+                info: 'bg-slate-900 text-white border-slate-700'
+            };
+
+            toast.className = `${styles[type] || styles.info} border px-4 py-3 rounded-xl shadow-xl text-xs sm:text-sm font-medium flex items-center justify-between gap-3 pointer-events-auto transition-all duration-300`;
+            toast.innerHTML = `
+                <span>${escapeHTML(message)}</span>
+                <button onclick="this.parentElement.remove()" class="text-white/70 hover:text-white font-bold">&times;</button>
+            `;
+
+            container.appendChild(toast);
+            setTimeout(() => {
+                if (toast.parentElement) toast.remove();
+            }, 4000);
+        }
+
+        function escapeHTML(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+    </script>
+</body>
+</html>
