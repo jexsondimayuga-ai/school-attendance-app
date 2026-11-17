@@ -11,9 +11,11 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    const SUPABASE_URL = 'https://ynkjjdkiruhuabnggjrd.supabase.co';
-    const SUPABASE_KEY = 'sb_publishable_wKvOqu3X2qUXRnoFyCm_Ng_zv0g7UWc';
-    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    <script>
+      const SUPABASE_URL = 'https://ynkjjdkiruhuabnggjrd.supabase.co';
+      const SUPABASE_KEY = 'sb_publishable_wKvOqu3X2qUXRnoFyCm_Ng_zv0g7UWc';
+      const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    </script>
     <script>
         tailwind.config = {
             theme: {
@@ -444,17 +446,65 @@
         // Sample Employee Profiles for Teaching & Non-Teaching
         const sampleProfiles = {
             'Teaching': [
-                { id: 'TCH-2026-014', name: 'Maria Clara Santos, LPT', position: 'Teacher III - Mathematics' },
-                { id: 'TCH-2026-029', name: 'Jose Protacio Reyes, MAEd', position: 'Master Teacher I - Science' },
-                { id: 'TCH-2026-042', name: 'Elena Rostova Cruz, LPT', position: 'Teacher I - English Dept.' }
+                { id: 'TCH-2016-092', name: 'Jexson A. Dimayuga, LPT', position: 'Teacher I - ICT' },
+
             ],
             'Non-Teaching': [
-                { id: 'NTCH-2026-005', name: 'Roberto M. Mendoza', position: 'Administrative Officer II' },
-                { id: 'NTCH-2026-011', name: 'Carmela D. Bautista', position: 'School Registrar / Records' },
-                { id: 'NTCH-2026-019', name: 'Danilo S. Villanueva', position: 'Chief Security & Gate Officer' }
+                { id: 'NTCH-2016-005', name: 'Carol C. De Chavez', position: 'Administrative Officer II' },
             ]
         };
+        // =========================================================================
+        // SUPABASE CLOUD SYNC FUNCTIONS
+        // =========================================================================
+        async function saveLogToCloud(entry) {
+          const { error } = await db.from('attendance_logs').insert([{
+            employee_id: entry.employeeId,
+            full_name: entry.fullName,
+            classification: entry.classification,
+            designation: entry.designation,
+            action: entry.action, // 'TIME IN' or 'TIME OUT'
+            distance_meters: entry.distance,
+            latitude: entry.lat,
+            longitude: entry.lng,
+            note: entry.note || ''
+          }]);
+          if (error) {
+            console.error('Supabase insert error:', error);
+            alert('Cloud sync failed: ' + error.message);
+          }
+        }
+async function loadLogsFromCloud() {
+  const { data, error } = await db
+    .from('attendance_logs')
+    .select('*')
+    .order('created_at', { ascending: false });
 
+  if (!error && data) {
+    attendanceLogs = data.map(row => ({
+      id: row.id,
+      employeeId: row.employee_id,
+      fullName: row.full_name,
+      classification: row.classification,
+      designation: row.designation,
+      action: row.action,
+      timestamp: new Date(row.created_at).toLocaleString(),
+      distance: row.distance_meters,
+      lat: row.latitude,
+      lng: row.longitude,
+      note: row.note
+    }));
+    renderAttendanceTable();
+    updateStats();
+  }
+// Real-time listener across devices
+db.channel('attendance-live')
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'attendance_logs' }, () => {
+    loadLogsFromCloud();
+  })
+  .subscribe();
+// Load logs on startup
+window.addEventListener('DOMContentLoaded', loadLogsFromCloud);
+}    
         // Attendance Logs Array (Persisted in localStorage)
         let attendanceLogs = [];
 
@@ -851,28 +901,24 @@
                 showToast('Please enter both Employee ID and Full Name before logging attendance.', 'error');
                 return;
             }
-
+            async function recordAttendance(actionType) {
             const now = new Date();
             const dateStr = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
             const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-            const newEntry = {
-                id: Date.now(),
-                empId: empId,
-                name: empName,
-                category: appState.selectedCategory,
-                position: empPosition || appState.selectedCategory,
+           const newEntry = {
+                employeeId: empId,
+                fullName: empName,
+                classification: appState.selectedCategory,
+                designation: empPosition || appState.selectedCategory,
                 action: actionType,
-                timestamp: `${dateStr} • ${timeStr}`,
                 distance: Math.round(appState.calculatedDistance),
-                coords: `${appState.currentCoords.lat.toFixed(6)}, ${appState.currentCoords.lng.toFixed(6)}`,
-                remarks: remarks
+                lat: appState.currentCoords.lat,
+                lng: appState.currentCoords.lng,
+                note: remarks
             };
 
-            attendanceLogs.unshift(newEntry);
-            saveLogsToLocalStorage();
-            renderAttendanceLogs();
-
+            await saveLogToCloud(newEntry);
             showToast(`${actionType} verified for ${empName} (${newEntry.distance}m from gate).`, 'success');
         }
 
